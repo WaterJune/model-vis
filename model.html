@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CoT-based Pose Estimation Architecture — v4</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px;color:#1a202c}
+.container{max-width:1400px;margin:0 auto;background:rgba(255,255,255,.96);border-radius:18px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+h1{text-align:center;color:#2d3748;font-size:28px}
+.subtitle{text-align:center;color:#718096;margin:6px 0 18px}
+.architecture-diagram{position:relative;width:100%;min-height:900px;background:linear-gradient(to bottom,#f7fafc,#edf2f7);border-radius:14px;padding:26px;overflow:visible;border:1px solid #e2e8f0}
+.component{position:absolute;background:#fff;border-radius:12px;padding:14px;box-shadow:0 4px 10px rgba(0,0,0,.08);border:2px solid transparent;transition:.25s;cursor:grab;user-select:none}
+.component:active{cursor:grabbing}
+.component:hover{transform:translateY(-2px);border-color:#667eea;box-shadow:0 10px 18px rgba(0,0,0,.15)}
+.component-title{font-weight:700;color:#2d3748;margin-bottom:6px;font-size:14px}
+.component-desc{color:#4a5568;font-size:13px;line-height:1.45}
+.component.active{border-color:#f56565}
+.flow-arrow{position:absolute;stroke:#cbd5e0;stroke-width:2;fill:none;marker-end:url(#arrowhead);transition:.3s;pointer-events:none}
+.flow-arrow.active{stroke:#f56565;stroke-width:3;stroke-dasharray:5 5;animation:flow 2s ease-in-out infinite}
+.flow-arrow.query{stroke:#63b3ed}
+@keyframes flow{0%{stroke-dashoffset:100}100%{stroke-dashoffset:0}}
+.cot-step{position:absolute;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700;opacity:.95;transition:.2s;letter-spacing:.2px;cursor:grab;user-select:none}
+.cot-step:active{cursor:grabbing}
+.cot-step:hover{transform:scale(1.06);box-shadow:0 8px 16px rgba(0,0,0,.12)}
+.control-panel{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.btn{padding:10px 18px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:0;border-radius:9px;cursor:pointer;font-weight:700;transition:.2s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(102,126,234,.35)}
+.toggle-row{display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap}
+.toggle{background:#edf2f7;border:1px solid #e2e8f0;border-radius:999px;padding:6px 10px;font-size:12px;cursor:pointer;color:#2d3748}
+.toggle.active{background:#e6fffa;border-color:#38b2ac;color:#22543d}
+.legend{margin-top:16px;padding:16px;background:#f7fafc;border-radius:10px;border:1px solid #e2e8f0}
+.legend-title{font-weight:800;color:#2d3748;margin-bottom:10px}
+.legend-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.legend-item{display:flex;align-items:center;gap:10px;font-size:13px;color:#4a5568}
+.legend-color{width:18px;height:18px;border-radius:4px}
+.info-panel{position:absolute;background:#fff;border:2px solid #667eea;border-radius:10px;padding:12px;max-width:320px;display:none;z-index:1000;box-shadow:0 10px 24px rgba(0,0,0,.2)}
+.info-panel.show{display:block}
+.loss-card{position:absolute;right:24px;top:24px;background:#fff;border:2px dashed #48bb78;border-radius:10px;padding:10px 14px;width:260px;display:none;z-index:900;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+.loss-card.show{display:block}
+.loss-card h4{margin-bottom:6px;color:#22543d}
+.loss-card ul{padding-left:16px;color:#2f855a}
+.query-input{display:flex;gap:6px;margin-top:8px}
+.query-input input{flex:1;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{background:#edf2f7;border:1px solid #e2e8f0;color:#2d3748;font-size:12px;padding:4px 8px;border-radius:999px;cursor:pointer}
+.chip:hover{background:#e2e8f0}
+.badge{display:inline-block;background:#edf2f7;color:#2d3748;padding:2px 6px;border-radius:6px;font-size:11px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🤖 CoT-based Multi-turn Pose Estimation — v4</h1>
+  <p class="subtitle">Center→Periphery scheduling with self-reasoning (4 steps). Default: <strong>Geometry-first CoT</strong>.</p>
+
+  <div class="architecture-diagram" id="diagram">
+    <svg style="position:absolute;width:100%;height:100%;pointer-events:none">
+      <defs><marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><polygon points="0 0, 10 3, 0 6" fill="#cbd5e0"/></marker></defs>
+      <!-- exit only after step 4 -->
+      <path class="flow-arrow" id="arrow1" d="M 180 100 L 180 180"/>
+      <path class="flow-arrow" id="arrow2" d="M 200 220 L 350 260"/>
+      <path class="flow-arrow" id="arrow3" d="M 200 220 L 350 360"/>
+      <path class="flow-arrow" id="arrow4" d="M 450 280 L 600 280"/>
+      <path class="flow-arrow" id="arrow5" d="M 450 380 L 600 380"/>
+      <path class="flow-arrow" id="arrow6" d="M 720 300 L 720 610"/>
+      <path class="flow-arrow" id="arrow7" d="M 760 615 L 930 615"/>
+      <path class="flow-arrow" id="arrow8" d="M 1010 630 L 1010 735"/>
+      <path class="flow-arrow query" id="qarrow" d="M 330 415 Q 470 350 600 300"/>
+    </svg>
+
+    <!-- input / towers -->
+    <div class="component" style="left:100px;top:30px;width:160px" data-info="input" data-left="100" data-top="30">
+      <div class="component-title">📸 Input Image</div><div class="component-desc">RGB image(s)<br/>Any resolution (AnyRes)</div></div>
+    <div class="component" style="left:100px;top:180px;width:160px" data-info="vision" data-left="100" data-top="180">
+      <div class="component-title">🔍 Vision Encoder</div><div class="component-desc">SigLIP tower<br/>frozen</div></div>
+
+    <div class="component" style="left:350px;top:230px;width:180px" data-info="siglip" data-left="350" data-top="230">
+      <div class="component-title">🌐 Global Visual Context</div><div class="component-desc">Scene semantics, occlusions,<br/>relationships</div></div>
+    <div class="component" style="left:350px;top:330px;width:180px" data-info="pose-enc" data-left="350" data-top="330">
+      <div class="component-title">🏃 Pose Encoder</div><div class="component-desc">Optional (ViTPose/HRNet).<br/>Keypoint-aware features</div></div>
+
+    <!-- reasoning query -->
+    <div class="component" id="queryBox" style="left:40px;top:330px;width:280px" data-info="query" data-left="40" data-top="330">
+      <div class="component-title">🧩 Reasoning Query</div>
+      <div class="component-desc">
+        Provide a single English question to guide reasoning.<br>
+        <span class="badge">example</span> “Which person in the image appears to be winning?”
+        <div class="query-input">
+          <input id="queryInput" type="text" value="Which person in the image appears to be winning?"/>
+          <button class="btn" style="padding:8px 12px" onclick="askQuery()">Ask</button>
+        </div>
+        <div class="chip-row">
+          <div class="chip" onclick="loadExample(this)">Who is closest to the camera?</div>
+          <div class="chip" onclick="loadExample(this)">Which person is jumping higher?</div>
+          <div class="chip" onclick="loadExample(this)">Is the right hand visible?</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LLM core -->
+    <div class="component" style="left:600px;top:250px;width:220px;height:170px;background:linear-gradient(135deg,#e6f3ff,#f0e6ff)" data-info="llm" data-left="600" data-top="250">
+      <div class="component-title">🧠 LLaVA-OneVision (frozen)</div>
+      <div class="component-desc">Multimodal hidden state<br>
+        <span class="badge">[POSE]</span> <span class="badge">[BODY]</span> <span class="badge">[HAND]</span> <span class="badge">[LEG]</span><br><br>
+        <strong>Adapter</strong> maps hidden → step cond.</div>
+    </div>
+
+    <!-- CoT steps -->
+    <div class="cot-step" id="step1" style="left:620px;top:450px" data-left="620" data-top="450">Step 1: Trunk (SMPL params)</div>
+    <div class="cot-step" id="step2" style="left:620px;top:500px" data-left="620" data-top="500">Step 2: Both Hands</div>
+    <div class="cot-step" id="step3" style="left:620px;top:550px" data-left="620" data-top="550">Step 3: Both Legs</div>
+    <div class="cot-step" id="step4" style="left:620px;top:600px" data-left="620" data-top="600">Step 4: Final Aggregate</div>
+
+    <!-- head -->
+    <div class="component" id="generator" style="left:920px;top:585px;width:220px" data-info="generator" data-left="920" data-top="585">
+      <div class="component-title" id="genTitle">⚡ Pose Regressor</div>
+      <div class="component-desc" id="genDesc">Geometry-first (default)<br>• Huber on 3D joints<br>• + 2D reprojection (opt)<br>• Kinematic priors</div>
+    </div>
+
+    <!-- output -->
+    <div class="component" style="left:960px;top:740px;width:170px;background:#e6fffa" data-info="output" data-left="960" data-top="740">
+      <div class="component-title">🎯 SMPL-X Output</div>
+      <div class="component-desc">Full body pose & shape<br>Rotations: 6D/axis-angle</div>
+    </div>
+
+    <!-- tokenizer moved to bottom-left -->
+    <div class="component" id="vqvaebox" style="left:24px;top:780px;width:220px;opacity:.5" data-info="vqvae" data-left="24" data-top="780">
+      <div class="component-title">🔤 VQ-VAE (tokenizer)</div>
+      <div class="component-desc">Disabled in Geometry-first</div>
+    </div>
+
+    <!-- extras -->
+    <div class="loss-card" id="lossCard"><h4>Losses</h4>
+      <ul id="lossList"><li>Huber on 3D joints (per step)</li><li>2D reprojection (optional)</li><li>Bone length & joint limits</li><li>Bilateral tie (hands / legs)</li></ul>
+    </div>
+    <div class="info-panel" id="infoPanel"><h3 id="infoPanelTitle" style="margin-bottom:6px"></h3><p id="infoPanelContent" style="color:#4a5568;font-size:13px;line-height:1.5"></p></div>
+  </div>
+
+  <div class="control-panel">
+    <button class="btn" onclick="animateFlow()">🎬 Animate Flow</button>
+    <button class="btn" onclick="showCoTProcess()">🔄 Show CoT Progress</button>
+    <button class="btn" onclick="toggleLossCard()">🧮 Toggle Losses</button>
+    <button class="btn" onclick="resetLayout()">♻️ Reset Layout</button>
+  </div>
+
+  <div class="toggle-row">
+    <button class="toggle active" id="styleGeom" onclick="switchStyle('geometry')">Geometry-first CoT</button>
+    <button class="toggle" id="styleLang" onclick="switchStyle('language')">Language-first CoT</button>
+    <button class="toggle active" id="teacherBtn" onclick="toggleTeacher()">Teacher Forcing: ON</button>
+    <button class="toggle" id="tokenBtn" onclick="toggleToken()">Tokenization: OFF</button>
+    <button class="toggle" id="genBtn" onclick="switchGenerator()">Head: Transformer</button>
+  </div>
+
+  <div class="legend" style="margin-top:16px">
+    <div class="legend-title">📋 Components</div>
+    <div class="legend-items">
+      <div class="legend-item"><div class="legend-color" style="background:#667eea"></div><span><strong>Vision towers</strong> (SigLIP, optional pose encoder) — frozen</span></div>
+      <div class="legend-item"><div class="legend-color" style="background:linear-gradient(135deg,#e6f3ff,#f0e6ff)"></div><span><strong>LLM core</strong> (LLaVA-OV, frozen) + small adapter → step condition</span></div>
+      <div class="legend-item"><div class="legend-color" style="background:#f56565"></div><span><strong>CoT steps</strong> (center→periphery; within-part bidirectional, across-steps causal)</span></div>
+      <div class="legend-item"><div class="legend-color" style="background:#48bb78"></div><span><strong>Data flow</strong> (path exits only after Step 4)</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const componentInfo={input:{title:"📸 Input Image",content:"RGB image(s) at arbitrary resolution. AnyRes strategies can feed high-res crops while keeping the token budget manageable."},
+vision:{title:"🔍 Vision Encoder",content:"SigLIP tower (frozen)."},siglip:{title:"🌐 Global Visual Context",content:"Scene layout & occlusion cues."},
+"pose-enc":{title:"🏃 Pose Encoder",content:"Optional keypoint-aware branch (ViTPose/HRNet)."},
+query:{title:"🧩 Reasoning Query",content:"A single English question that steers global reasoning (e.g., “Which person in the image appears to be winning?”)."},
+llm:{title:"🧠 LLaVA-OV (frozen)",content:"Planner/controller; adapter conditions each step."},
+generator:{title:"⚡ Pose Head",content:"Light transformer regressor by default; diffusion optional for final step."},
+output:{title:"🎯 SMPL-X Output",content:"Complete SMPL-X pose/shape."},
+vqvae:{title:"🔤 VQ-VAE",content:"Optional tokenization if enabled."}};
+let styleMode='geometry',teacherForcing=true,tokenization=false,generatorType='transformer',animating=false;
+
+document.querySelectorAll('.component').forEach(el=>{
+  el.addEventListener('mouseenter',e=>{
+    const info=el.dataset.info,p=document.getElementById('infoPanel');
+    if(componentInfo[info]){document.getElementById('infoPanelTitle').textContent=componentInfo[info].title;
+      document.getElementById('infoPanelContent').textContent=componentInfo[info].content;
+      p.style.left=(e.pageX+12)+'px';p.style.top=(e.pageY+12)+'px';p.classList.add('show');}
+  });
+  el.addEventListener('mouseleave',()=>document.getElementById('infoPanel').classList.remove('show'));
+});
+
+function animateFlow(){if(animating)return;animating=true;
+  const A=document.querySelectorAll('.flow-arrow'),C=document.querySelectorAll('.component');
+  A.forEach(a=>a.classList.remove('active'));C.forEach(c=>c.classList.remove('active'));
+  const seq=[{t:0,sel:'[data-info="input"]',type:'c'},{t:250,id:'arrow1',type:'a'},{t:500,sel:'[data-info="vision"]',type:'c'},
+    {t:750,id:'arrow2',type:'a'},{t:750,id:'arrow3',type:'a'},{t:1000,sel:'[data-info="siglip"]',type:'c'},
+    {t:1000,sel:'[data-info="pose-enc"]',type:'c'},{t:1200,id:'qarrow',type:'a'},{t:1400,sel:'[data-info="llm"]',type:'c'},
+    {t:1600,id:'arrow6',type:'a'},{t:1800,sel:'#step1',type:'c'},{t:2000,sel:'#step2',type:'c'},
+    {t:2200,sel:'#step3',type:'c'},{t:2400,sel:'#step4',type:'c'},{t:2600,id:'arrow7',type:'a'},
+    {t:2800,sel:'[data-info="generator"]',type:'c'},{t:3000,id:'arrow8',type:'a'},{t:3200,sel:'[data-info="output"]',type:'c'}];
+  seq.forEach(s=>setTimeout(()=>{s.type==='a'?document.getElementById(s.id).classList.add('active'):document.querySelector(s.sel).classList.add('active')},s.t));
+  setTimeout(()=>animating=false,3600);
+}
+function showCoTProcess(){[...['#step1','#step2','#step3','#step4'].map(id=>document.querySelector(id))].forEach((s,i)=>{s.style.transition='transform .45s ease';setTimeout(()=>{s.style.transform='scale(1.06)';setTimeout(()=>{s.style.transform='scale(1)'},280)},i*420)})}
+function toggleLossCard(){document.getElementById('lossCard').classList.toggle('show')}
+function switchStyle(m){if(m===styleMode)return;styleMode=m;const sg=document.getElementById('styleGeom'),sl=document.getElementById('styleLang');
+ if(m==='geometry'){sg.classList.add('active');sl.classList.remove('active');
+  step1.textContent="Step 1: Trunk (SMPL params)";step2.textContent="Step 2: Both Hands";step3.textContent="Step 3: Both Legs";step4.textContent="Step 4: Final Aggregate";
+  genTitle.textContent='⚡ Pose Regressor';genDesc.innerHTML='Geometry-first (default)<br>• Huber on 3D joints<br>• + 2D reprojection (opt)<br>• Kinematic priors';
+  const vq=document.getElementById('vqvaebox');vq.style.opacity=.5;vq.querySelector('.component-desc').textContent="Disabled in Geometry-first";
+  tokenization=false;tokenBtn.classList.remove('active');tokenBtn.textContent='Tokenization: OFF';
+ }else{sg.classList.remove('active');sl.classList.add('active');
+  step1.textContent="Step 1: Describe trunk (language)";step2.textContent="Step 2: Describe hands/arms";step3.textContent="Step 3: Describe legs";step4.textContent="Step 4: Final SMPL-X";
+  genTitle.textContent='📝 Text Head + Pose Head';genDesc.innerHTML='Language-first<br>• CE on part descriptions (1-3)<br>• Huber on final SMPL-X (4)<br>• Optional text↔pose contrastive';
+  const vq=document.getElementById('vqvaebox');vq.style.opacity=.8;vq.querySelector('.component-desc').textContent="Optional for tokenized supervision";}}
+function toggleTeacher(){teacherForcing=!teacherForcing;teacherBtn.textContent=teacherForcing?'Teacher Forcing: ON':'Teacher Forcing: OFF';teacherBtn.classList.toggle('active')}
+function toggleToken(){tokenization=!tokenization;const vq=document.getElementById('vqvaebox');if(tokenization){tokenBtn.textContent='Tokenization: ON';tokenBtn.classList.add('active');vq.style.opacity=1;vq.querySelector('.component-desc').textContent=(styleMode==='geometry')?'Tokenization enabled (hybrid)':'Tokenization enabled'}else{tokenBtn.textContent='Tokenization: OFF';tokenBtn.classList.remove('active');vq.style.opacity=(styleMode==='geometry')?.5:.8;vq.querySelector('.component-desc').textContent=(styleMode==='geometry')?'Disabled in Geometry-first':'Optional for tokenized supervision'}}
+function switchGenerator(){generatorType=(generatorType==='transformer')?'diffusion':'transformer';if(generatorType==='diffusion'){genBtn.textContent='Head: Diffusion';generator.style.background='#fffaf0';genTitle.textContent=(styleMode==='language')?'🌊 Text+Pose (Diffusion refine)':'🌊 Diffusion Regressor (slow)';genDesc.innerHTML=(styleMode==='language')?'Use diffusion to refine final SMPL-X at step 4.<br>Heavier but robust under ambiguity.':'Iterative denoising for SMPL(-X).<br>Better uncertainty modeling; higher latency.'}else{genBtn.textContent='Head: Transformer';generator.style.background='white';genTitle.textContent=(styleMode==='language')?'📝 Text Head + Pose Head':'⚡ Pose Regressor';genDesc.innerHTML=(styleMode==='language')?'Language-first<br>• CE on part descriptions (1-3)<br>• Huber on final SMPL-X (4)<br>• Optional text↔pose contrastive':'Geometry-first (default)<br>• Huber on 3D joints<br>• + 2D reprojection (opt)<br>• Kinematic priors'}}
+function loadExample(el){document.getElementById('queryInput').value=el.textContent}
+function askQuery(){const qarrow=document.getElementById('qarrow');qarrow.classList.add('active');const llm=document.querySelector('[data-info="llm"]');llm.classList.add('active');setTimeout(()=>{qarrow.classList.remove('active');llm.classList.remove('active')},1400)}
+// Dragging
+let dragEl=null,startX=0,startY=0,baseL=0,baseT=0;const diagram=document.getElementById('diagram');
+function makeDraggable(sel){document.querySelectorAll(sel).forEach(el=>{el.style.touchAction='none';
+  el.addEventListener('pointerdown',e=>{if(e.button!==0)return;dragEl=el;startX=e.clientX;startY=e.clientY;baseL=parseFloat(el.style.left||el.getAttribute('data-left')||0);baseT=parseFloat(el.style.top||el.getAttribute('data-top')||0);el.setPointerCapture(e.pointerId);document.getElementById('infoPanel').classList.remove('show')});
+  el.addEventListener('pointermove',e=>{if(dragEl!==el)return;const dx=e.clientX-startX,dy=e.clientY-startY,rect=diagram.getBoundingClientRect(),er=el.getBoundingClientRect();let L=baseL+dx,T=baseT+dy;const pad=8,maxL=rect.width-er.width-pad,maxT=rect.height-er.height-pad;L=Math.max(pad,Math.min(maxL,L));T=Math.max(pad,Math.min(maxT,T));if(e.shiftKey){L=Math.round(L/10)*10;T=Math.round(T/10)*10}el.style.left=L+'px';el.style.top=T+'px'});
+  const end=e=>{if(dragEl===el){el.releasePointerCapture&&el.releasePointerCapture(e.pointerId);dragEl=null}};el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);})}
+makeDraggable('.component');makeDraggable('.cot-step');
+function resetLayout(){document.querySelectorAll('.component,.cot-step').forEach(el=>{const L=el.getAttribute('data-left'),T=el.getAttribute('data-top');if(L!==null&&T!==null){el.style.left=L+'px';el.style.top=T+'px'}})}
+setTimeout(animateFlow,800);
+</script>
+</body>
+</html>
